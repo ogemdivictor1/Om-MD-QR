@@ -18,9 +18,21 @@ function removeFile(FilePath) {
   fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// helper: create a Cypher ID: CYPHERXXXXXXXX (no spaces/dashes)
+// helper: create a Cypher ID: CYPHERXXXXXXXX (no spaces or dashes)
 function generateCypherId() {
-  return crypto.randomBytes(6).toString('hex').toUpperCase(); // 12-character hex
+  return 'CYPHER' + crypto.randomBytes(5).toString('hex').toUpperCase();
+}
+
+// heartbeat function: sends presence every 30s
+async function startHeartbeat(sock) {
+  setInterval(async () => {
+    try {
+      await sock.sendPresenceUpdate('available');
+      console.log('💓 Heartbeat sent to WhatsApp');
+    } catch (e) {
+      console.error('⚠️ Heartbeat failed:', e);
+    }
+  }, 30000);
 }
 
 router.get('/', async (req, res) => {
@@ -48,10 +60,7 @@ router.get('/', async (req, res) => {
 
       if (!sock.authState.creds.registered) {
         const code = await sock.requestPairingCode(num);
-        if (!res.headersSent) {
-          console.log('📱 Pair code generated:', code);
-          res.send({ code });
-        }
+        if (!res.headersSent) res.send({ code });
       }
 
       sock.ev.on('creds.update', saveCreds);
@@ -64,34 +73,34 @@ router.get('/', async (req, res) => {
         } else if (connection === 'open') {
           console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
 
-          // Generate fully-random Cypher Session ID
-          const cypherId = generateCypherId();
+          // start heartbeat
+          startHeartbeat(sock);
 
-          // Messages: first welcome, then session ID
-          const welcomeMessage = `☠️ *Welcome to the Abyss* ☠️\n\nYour Cypher session is now active...`;
-          const sessionMessage = `🆔 *Your Cypher Session ID:* ${cypherId}\nKeep this key safe.`;
+          // small delay to avoid "waiting for message"
+          await delay(4000);
+          await sock.sendPresenceUpdate('available');
 
+          // send welcome message first
+          const welcomeMessage = '☠️ Welcome to the Abyss ☠️\nYour WhatsApp is now linked with Cypher Session ID Generator.';
           try {
             await sock.sendMessage(num + '@s.whatsapp.net', { text: welcomeMessage });
-            await delay(500);
-            await sock.sendMessage(num + '@s.whatsapp.net', { text: sessionMessage });
-            console.log(`📩 Cypher ID ${cypherId} sent to ${num}`);
+            console.log('📩 Welcome message sent');
           } catch (err) {
-            console.error('⚠️ Could not send messages:', err);
+            console.error('⚠️ Could not send welcome message:', err);
           }
 
-          // HEARTBEAT: send every 30s indefinitely
-          const heartbeat = setInterval(async () => {
-            try {
-              await sock.sendPresenceUpdate('available');
-              console.log('💓 Heartbeat sent to keep session alive');
-            } catch (err) {
-              console.error('⚠️ Heartbeat failed:', err);
-            }
-          }, 30000);
+          // small delay before sending session ID
+          await delay(1000);
+          const cypherId = generateCypherId();
+          const sessionMessage = `🆔 Your Cypher Session ID:\n*${cypherId}*\nKeep it safe.`;
+          try {
+            await sock.sendMessage(num + '@s.whatsapp.net', { text: sessionMessage });
+            console.log(`📩 Cypher Session ID sent: ${cypherId}`);
+          } catch (err) {
+            console.error('⚠️ Could not send session ID message:', err);
+          }
 
-          // DO NOT close the socket or remove temp folder automatically
-          console.log('💀 Session will now stay alive indefinitely until manually closed.');
+          // keep the socket alive indefinitely
         } else if (
           connection === 'close' &&
           lastDisconnect &&
