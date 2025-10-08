@@ -1,7 +1,8 @@
 const express = require('express');
 const fs = require('fs');
+const crypto = require('crypto');
 const pino = require('pino');
-const { makeid } = require('./id');
+const { makeid } = require('./id'); // optional; used for temp folder naming
 const {
   makeWASocket,
   useMultiFileAuthState,
@@ -17,13 +18,20 @@ function removeFile(FilePath) {
   fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
+// helper: create a Cypher ID: CYPHER-XXXX-XXXX (uppercase hex)
+function generateCypherId() {
+  const a = crypto.randomBytes(2).toString('hex').toUpperCase(); // 4 chars
+  const b = crypto.randomBytes(2).toString('hex').toUpperCase(); // 4 chars
+  return `CYPHER-${a}-${b}`;
+}
+
 router.get('/', async (req, res) => {
   const id = makeid();
   const num = (req.query.number || '').replace(/[^0-9]/g, '');
   if (!num) return res.send({ error: 'Number missing' });
 
+  // ensure temp folder exists
   if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
-  if (!fs.existsSync('./sessions')) fs.mkdirSync('./sessions');
 
   async function createPairingCode() {
     const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
@@ -39,8 +47,10 @@ router.get('/', async (req, res) => {
         browser: Browsers.macOS('Safari')
       });
 
+      // small delay to let Baileys init
       await delay(1000);
 
+      // If not already registered, request pairing code and return it to the web client
       if (!sock.authState.creds.registered) {
         const code = await sock.requestPairingCode(num);
         if (!res.headersSent) {
@@ -49,48 +59,50 @@ router.get('/', async (req, res) => {
         }
       }
 
+      // keep auth updates if any (still temporary)
       sock.ev.on('creds.update', saveCreds);
 
+      // watch connection updates
       sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
         if (connection === 'connecting') {
           console.log('🔄 Connecting to WhatsApp...');
         } else if (connection === 'open') {
-          console.log('✅ Connected to WhatsApp:', sock.user.id);
+          console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
 
-          const sessionId = sock.user.id;
-          await fs.promises.writeFile(
-            `./sessions/${sessionId}.json`,
-            JSON.stringify(state.creds, null, 2)
-          );
-          console.log('🧠 Session saved successfully!');
+          // Generate a fully-random Cypher Session ID
+          const cypherId = generateCypherId();
 
-          // ✅ Send only clean session message
+          // Build dark & scary message
+          const message = `☠️ *Welcome to the Abyss* ☠️\n\nYour Cypher Session ID has been forged:\n\n*${cypherId}*\n\nBound to the shadows... keep the key safe.`;
+
           try {
-            await sock.sendMessage(num + '@s.whatsapp.net', {
-              text: `✅ *Cypher Session Connected Successfully!*\n\n🆔 Your Session ID:\n*${sessionId}*\n\nKeep this ID safe — it identifies your linked WhatsApp session.`
-            });
-            console.log('📩 Session ID sent to:', num);
+            // Send the custom Cypher ID to the very number that paired
+            await sock.sendMessage(num + '@s.whatsapp.net', { text: message });
+            console.log(`📩 Cypher ID ${cypherId} sent to ${num}`);
           } catch (err) {
-            console.error('⚠️ Could not send session ID message:', err);
+            console.error('⚠️ Could not send Cypher ID message:', err);
           }
 
-          await delay(3000);
-          await sock.ws.close();
+          // Clean up: close socket and remove temp auth folder
+          await delay(2000);
+          try { await sock.ws.close(); } catch (e) { /* ignore */ }
           removeFile('./temp/' + id);
+
+          // NOTE: we intentionally do NOT persist session files here
         } else if (
           connection === 'close' &&
           lastDisconnect &&
           lastDisconnect.error?.output?.statusCode !== 401
         ) {
-          console.log('⚠️ Connection lost. Reconnecting...');
+          console.log('⚠️ Connection closed unexpectedly. Reconnecting...');
           await delay(3000);
           createPairingCode();
         }
       });
     } catch (err) {
-      console.error('❌ Error connecting:', err);
+      console.error('❌ Error in pairing flow:', err);
       removeFile('./temp/' + id);
       if (!res.headersSent) res.send({ code: 'Service Unavailable' });
     }
