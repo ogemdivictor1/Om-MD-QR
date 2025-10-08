@@ -12,7 +12,6 @@ const {
 
 const router = express.Router();
 
-// Function to safely remove a folder
 function removeFile(FilePath) {
   if (!fs.existsSync(FilePath)) return false;
   fs.rmSync(FilePath, { recursive: true, force: true });
@@ -23,7 +22,6 @@ router.get('/', async (req, res) => {
   const num = (req.query.number || '').replace(/[^0-9]/g, '');
   if (!num) return res.send({ error: 'Number missing' });
 
-  // Make sure temp directory exists
   if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
 
   async function createPairingCode() {
@@ -40,24 +38,35 @@ router.get('/', async (req, res) => {
         browser: Browsers.macOS('Safari')
       });
 
-      // Wait a bit for Baileys to initialize
       await delay(1000);
 
       if (!sock.authState.creds.registered) {
         const code = await sock.requestPairingCode(num);
         if (!res.headersSent) {
-          return res.send({ code });
+          console.log('📱 Pair code generated:', code);
+          res.send({ code });
         }
       }
 
       sock.ev.on('creds.update', saveCreds);
 
+      // 👇 Added: clear connection updates for better tracking
       sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
-        if (connection === 'open') {
+        if (connection === 'connecting') {
+          console.log('🔄 Connecting to WhatsApp...');
+        } else if (connection === 'open') {
           console.log('✅ Connected to WhatsApp:', sock.user.id);
-          await delay(4000);
+
+          // 💾 Save the session only after success
+          await fs.promises.writeFile(
+            `./sessions/${sock.user.id}.json`,
+            JSON.stringify(state.creds, null, 2)
+          );
+          console.log('🧠 Session saved successfully!');
+
+          await delay(3000);
           await sock.ws.close();
           removeFile('./temp/' + id);
         } else if (
@@ -65,8 +74,8 @@ router.get('/', async (req, res) => {
           lastDisconnect &&
           lastDisconnect.error?.output?.statusCode !== 401
         ) {
-          console.log('Reconnecting...');
-          await delay(5000);
+          console.log('⚠️ Connection lost. Reconnecting...');
+          await delay(3000);
           createPairingCode();
         }
       });
