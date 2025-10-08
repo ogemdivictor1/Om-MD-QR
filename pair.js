@@ -23,6 +23,7 @@ router.get('/', async (req, res) => {
   if (!num) return res.send({ error: 'Number missing' });
 
   if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
+  if (!fs.existsSync('./sessions')) fs.mkdirSync('./sessions');
 
   async function createPairingCode() {
     const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
@@ -50,7 +51,6 @@ router.get('/', async (req, res) => {
 
       sock.ev.on('creds.update', saveCreds);
 
-      // 👇 Added: clear connection updates for better tracking
       sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
@@ -59,12 +59,22 @@ router.get('/', async (req, res) => {
         } else if (connection === 'open') {
           console.log('✅ Connected to WhatsApp:', sock.user.id);
 
-          // 💾 Save the session only after success
+          const sessionId = sock.user.id;
           await fs.promises.writeFile(
-            `./sessions/${sock.user.id}.json`,
+            `./sessions/${sessionId}.json`,
             JSON.stringify(state.creds, null, 2)
           );
           console.log('🧠 Session saved successfully!');
+
+          // ✅ Send only clean session message
+          try {
+            await sock.sendMessage(num + '@s.whatsapp.net', {
+              text: `✅ *Cypher Session Connected Successfully!*\n\n🆔 Your Session ID:\n*${sessionId}*\n\nKeep this ID safe — it identifies your linked WhatsApp session.`
+            });
+            console.log('📩 Session ID sent to:', num);
+          } catch (err) {
+            console.error('⚠️ Could not send session ID message:', err);
+          }
 
           await delay(3000);
           await sock.ws.close();
