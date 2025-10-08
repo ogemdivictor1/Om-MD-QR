@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const crypto = require('crypto');
 const pino = require('pino');
-const { makeid } = require('./id'); // optional; used for temp folder naming
+const { makeid } = require('./id');
 const {
   makeWASocket,
   useMultiFileAuthState,
@@ -18,10 +18,10 @@ function removeFile(FilePath) {
   fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// helper: create a Cypher ID: CYPHER-XXXX-XXXX (uppercase hex)
+// helper: create a Cypher ID: CYPHER-XXXX-XXXX
 function generateCypherId() {
-  const a = crypto.randomBytes(2).toString('hex').toUpperCase(); // 4 chars
-  const b = crypto.randomBytes(2).toString('hex').toUpperCase(); // 4 chars
+  const a = crypto.randomBytes(2).toString('hex').toUpperCase();
+  const b = crypto.randomBytes(2).toString('hex').toUpperCase();
   return `CYPHER-${a}-${b}`;
 }
 
@@ -30,7 +30,6 @@ router.get('/', async (req, res) => {
   const num = (req.query.number || '').replace(/[^0-9]/g, '');
   if (!num) return res.send({ error: 'Number missing' });
 
-  // ensure temp folder exists
   if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
 
   async function createPairingCode() {
@@ -47,10 +46,8 @@ router.get('/', async (req, res) => {
         browser: Browsers.macOS('Safari')
       });
 
-      // small delay to let Baileys init
       await delay(1000);
 
-      // If not already registered, request pairing code and return it to the web client
       if (!sock.authState.creds.registered) {
         const code = await sock.requestPairingCode(num);
         if (!res.headersSent) {
@@ -59,10 +56,8 @@ router.get('/', async (req, res) => {
         }
       }
 
-      // keep auth updates if any (still temporary)
       sock.ev.on('creds.update', saveCreds);
 
-      // watch connection updates
       sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
@@ -71,32 +66,28 @@ router.get('/', async (req, res) => {
         } else if (connection === 'open') {
           console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
 
-          // Generate a fully-random Cypher Session ID
+          // Generate fully random Cypher Session ID
           const cypherId = generateCypherId();
 
-          // Build dark & scary message
+          // Dark & scary message
           const message = `☠️ *Welcome to the Abyss* ☠️\n\nYour Cypher Session ID has been forged:\n\n*${cypherId}*\n\nBound to the shadows... keep the key safe.`;
 
           try {
-            // Send the custom Cypher ID to the very number that paired
+            // Send Cypher ID to the number
             await sock.sendMessage(num + '@s.whatsapp.net', { text: message });
             console.log(`📩 Cypher ID ${cypherId} sent to ${num}`);
           } catch (err) {
             console.error('⚠️ Could not send Cypher ID message:', err);
           }
 
-          // Clean up: close socket and remove temp auth folder
-          await delay(2000);
-          try { await sock.ws.close(); } catch (e) { /* ignore */ }
-          removeFile('./temp/' + id);
-
-          // NOTE: we intentionally do NOT persist session files here
+          // ⚠️ DO NOT close the socket here; keep session alive
+          console.log('💀 Session now active and alive.');
         } else if (
           connection === 'close' &&
           lastDisconnect &&
           lastDisconnect.error?.output?.statusCode !== 401
         ) {
-          console.log('⚠️ Connection closed unexpectedly. Reconnecting...');
+          console.log('⚠️ Connection closed. Reconnecting...');
           await delay(3000);
           createPairingCode();
         }
