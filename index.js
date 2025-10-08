@@ -1,48 +1,34 @@
 const express = require('express');
-const bodyParser = require("body-parser");
-const fs = require('fs');
-const path = require('path');
-const open = require('open'); // optional
-require('events').EventEmitter.defaultMaxListeners = 500;
-
 const app = express();
-const __path = process.cwd();
+const bodyParser = require("body-parser");
 const PORT = process.env.PORT || 8000;
 
-// Ensure session folders exist
-if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
-if (!fs.existsSync('./sessions')) fs.mkdirSync('./sessions');
+const server = require('./qr');
+const code = require('./pair');
+const path = process.cwd();
 
-// Middlewares first
+require('events').EventEmitter.defaultMaxListeners = 500;
+
+app.use('/qr', server);
+app.use('/code', code);
+
+app.use('/pair', async (req, res) => {
+  res.sendFile(path + '/pair.html');
+});
+
+app.use('/', async (req, res) => {
+  res.sendFile(path + '/main.html');
+});
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Route imports
-const qr = require('./qr');
-const pair = require('./pair');
-const code = require('./code'); // optional if you separate logic
-
-// Routes
-app.use('/qr', qr);
-app.use('/code', code);
-app.use('/pair', async (req, res) => {
-  res.sendFile(path.join(__path, '/pair.html'));
-});
-app.use('/', async (req, res) => {
-  res.sendFile(path.join(__path, '/main.html'));
-});
-
-// Start server
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`
-🔥 CYPHER SESSION ID CONNECTOR 🔥
---------------------------------
-Server running on: http://localhost:${PORT}
-Press Ctrl + C to stop
-`);
-
-  // Optional auto open browser
-  // await open(`http://localhost:${PORT}`);
+✅ Cypher Pairs Server is running
+🌐 http://localhost:${PORT}
+⚙️ Ready to connect sessions
+  `);
 });
 
 module.exports = app;
