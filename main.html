@@ -2,84 +2,124 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>IMRAN MD QR</title>
+  <title>CYPHER SESSION ID CONNECTOR</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
+    /* === Base Styling === */
     body {
+      margin: 0;
+      height: 100vh;
+      background: linear-gradient(135deg, #0a0000 20%, #1a0000 40%, #330000 70%, #660000 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100vh;
-      margin: 0;
-      background-color: black;
+      font-family: 'Poppins', sans-serif;
+      color: #ff1a1a;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    h1 {
+      font-size: 2em;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      text-shadow: 0 0 20px #ff0000, 0 0 40px #ff3333;
+      animation: flicker 2.5s infinite;
+      margin-bottom: 40px;
+    }
+
+    @keyframes flicker {
+      0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% {
+        opacity: 1;
+      }
+      20%, 24%, 55% {
+        opacity: 0.3;
+      }
     }
 
     .btn {
-      --color: #e5f5f1;
-      --color2: rgb(0, 0, 0);
-      width: 200px;
-      padding: 0.8em 1.75em;
-      background-color: transparent;
-      border-radius: 6px;
-      border: .3px solid var(--color);
-      transition: .5s;
+      width: 230px;
+      padding: 1em;
+      margin: 12px;
+      font-size: 1em;
+      text-transform: uppercase;
+      border: 2px solid #ff1a1a;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.5);
+      color: #ff4d4d;
+      cursor: pointer;
+      transition: all 0.4s ease;
       position: relative;
       overflow: hidden;
-      cursor: pointer;
-      z-index: 1;
-      font-weight: 300;
-      font-size: 17px;
-      font-family: 'Roboto', 'Segoe UI', sans-serif;
-      text-transform: uppercase;
-      color: var(--color);
-      margin-bottom: 24px;
-    }
-
-    .btn::after, .btn::before {
-      content: '';
-      display: block;
-      height: 100%;
-      width: 100%;
-      transform: skew(90deg) translate(-50%, -50%);
-      position: absolute;
-      inset: 50%;
-      left: 25%;
-      z-index: -1;
-      transition: .5s ease-out;
-      background-color: var(--color);
+      letter-spacing: 1px;
     }
 
     .btn::before {
-      top: -50%;
-      left: -25%;
-      transform: skew(90deg) rotate(180deg) translate(-50%, -50%);
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(120deg, transparent, rgba(255, 0, 0, 0.6), transparent);
+      transition: all 0.5s ease;
     }
 
     .btn:hover::before {
-      transform: skew(45deg) rotate(180deg) translate(-50%, -50%);
-    }
-
-    .btn:hover::after {
-      transform: skew(45deg) translate(-50%, -50%);
+      left: 100%;
     }
 
     .btn:hover {
-      color: var(--color2);
+      color: white;
+      box-shadow: 0 0 20px #ff0000, 0 0 40px #ff1a1a;
+      transform: scale(1.07);
     }
 
-    .btn:active {
-      filter: brightness(.7);
-      transform: scale(.98);
+    footer {
+      position: absolute;
+      bottom: 15px;
+      font-size: 0.85em;
+      color: #b30000;
+      text-shadow: 0 0 8px #ff0000;
+    }
+
+    /* Floating red aura animation */
+    .aura {
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(255,0,0,0.15) 0%, transparent 70%);
+      animation: pulse 6s infinite ease-in-out;
+      border-radius: 50%;
+      z-index: -1;
+      filter: blur(40px);
+    }
+
+    .aura:nth-child(1) {
+      top: 20%;
+      left: 15%;
+      animation-delay: 0s;
+    }
+
+    .aura:nth-child(2) {
+      bottom: 20%;
+      right: 15%;
+      animation-delay: 3s;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.4; }
+      50% { transform: scale(1.3); opacity: 0.8; }
     }
   </style>
 </head>
 <body>
+  <div class="aura"></div>
+  <div class="aura"></div>
 
-  <button onclick="window.open(`/qr`)" class="btn">qr code</button>
-  <button onclick="window.open(`/pair`)" class="btn">pair code</button>
-  <button onclick="window.open(`https://github.com/MR-IMRAN-60/IMRAN-MD`)" class="btn">github</button>
-  
+  <h1>CYPHER SESSION ID CONNECTOR</h1>
+  <button onclick="window.open('/qr')" class="btn">QR CODE</button>
+  <button onclick="window.open('/pair')" class="btn">PAIR CODE</button>
 
-</body>
-</html>
+  <footer>⚡ Cypher once said — “The code burns, only devils link.”</footer>
