@@ -13,21 +13,15 @@ const {
 
 const router = express.Router();
 
-// helper to remove temp folder
 function removeFile(FilePath) {
   if (!fs.existsSync(FilePath)) return false;
   fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// Generate Cypher ID: CYPHER-XXXX-XXXX
+// helper: create a Cypher ID: CYPHERXXXXXXXX (no spaces/dashes)
 function generateCypherId() {
-  const a = crypto.randomBytes(2).toString('hex').toUpperCase();
-  const b = crypto.randomBytes(2).toString('hex').toUpperCase();
-  return `CYPHER-${a}-${b}`;
+  return crypto.randomBytes(6).toString('hex').toUpperCase(); // 12-character hex
 }
-
-// Store active sockets to keep them alive
-const activeSockets = {};
 
 router.get('/', async (req, res) => {
   const id = makeid();
@@ -50,7 +44,6 @@ router.get('/', async (req, res) => {
         browser: Browsers.macOS('Safari')
       });
 
-      // Small delay to initialize
       await delay(1000);
 
       if (!sock.authState.creds.registered) {
@@ -61,32 +54,44 @@ router.get('/', async (req, res) => {
         }
       }
 
-      // Save auth updates
       sock.ev.on('creds.update', saveCreds);
 
-      // Watch connection
       sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
         if (connection === 'connecting') {
-          console.log('🔄 Connecting...');
+          console.log('🔄 Connecting to WhatsApp...');
         } else if (connection === 'open') {
           console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
 
-          // Generate Cypher ID
+          // Generate fully-random Cypher Session ID
           const cypherId = generateCypherId();
-          const message = `☠️ *Welcome to the Abyss* ☠️\n\nYour Cypher Session ID has been forged:\n\n*${cypherId}*\n\nBound to the shadows... keep the key safe.`;
+
+          // Messages: first welcome, then session ID
+          const welcomeMessage = `☠️ *Welcome to the Abyss* ☠️\n\nYour Cypher session is now active...`;
+          const sessionMessage = `🆔 *Your Cypher Session ID:* ${cypherId}\nKeep this key safe.`;
 
           try {
-            await sock.sendMessage(num + '@s.whatsapp.net', { text: message });
+            await sock.sendMessage(num + '@s.whatsapp.net', { text: welcomeMessage });
+            await delay(500);
+            await sock.sendMessage(num + '@s.whatsapp.net', { text: sessionMessage });
             console.log(`📩 Cypher ID ${cypherId} sent to ${num}`);
           } catch (err) {
-            console.error('⚠️ Could not send Cypher ID message:', err);
+            console.error('⚠️ Could not send messages:', err);
           }
 
-          // Keep the socket alive by storing it
-          activeSockets[sock.user.id] = sock;
-          console.log(`🧠 Session for ${sock.user.id} is now active.`);
+          // HEARTBEAT: send every 30s indefinitely
+          const heartbeat = setInterval(async () => {
+            try {
+              await sock.sendPresenceUpdate('available');
+              console.log('💓 Heartbeat sent to keep session alive');
+            } catch (err) {
+              console.error('⚠️ Heartbeat failed:', err);
+            }
+          }, 30000);
+
+          // DO NOT close the socket or remove temp folder automatically
+          console.log('💀 Session will now stay alive indefinitely until manually closed.');
         } else if (
           connection === 'close' &&
           lastDisconnect &&
