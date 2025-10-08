@@ -13,17 +13,21 @@ const {
 
 const router = express.Router();
 
+// helper to remove temp folder
 function removeFile(FilePath) {
   if (!fs.existsSync(FilePath)) return false;
   fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// helper: create a Cypher ID: CYPHER-XXXX-XXXX
+// Generate Cypher ID: CYPHER-XXXX-XXXX
 function generateCypherId() {
   const a = crypto.randomBytes(2).toString('hex').toUpperCase();
   const b = crypto.randomBytes(2).toString('hex').toUpperCase();
   return `CYPHER-${a}-${b}`;
 }
+
+// Store active sockets to keep them alive
+const activeSockets = {};
 
 router.get('/', async (req, res) => {
   const id = makeid();
@@ -46,6 +50,7 @@ router.get('/', async (req, res) => {
         browser: Browsers.macOS('Safari')
       });
 
+      // Small delay to initialize
       await delay(1000);
 
       if (!sock.authState.creds.registered) {
@@ -56,38 +61,38 @@ router.get('/', async (req, res) => {
         }
       }
 
+      // Save auth updates
       sock.ev.on('creds.update', saveCreds);
 
+      // Watch connection
       sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
         if (connection === 'connecting') {
-          console.log('🔄 Connecting to WhatsApp...');
+          console.log('🔄 Connecting...');
         } else if (connection === 'open') {
           console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
 
-          // Generate fully random Cypher Session ID
+          // Generate Cypher ID
           const cypherId = generateCypherId();
-
-          // Dark & scary message
           const message = `☠️ *Welcome to the Abyss* ☠️\n\nYour Cypher Session ID has been forged:\n\n*${cypherId}*\n\nBound to the shadows... keep the key safe.`;
 
           try {
-            // Send Cypher ID to the number
             await sock.sendMessage(num + '@s.whatsapp.net', { text: message });
             console.log(`📩 Cypher ID ${cypherId} sent to ${num}`);
           } catch (err) {
             console.error('⚠️ Could not send Cypher ID message:', err);
           }
 
-          // ⚠️ DO NOT close the socket here; keep session alive
-          console.log('💀 Session now active and alive.');
+          // Keep the socket alive by storing it
+          activeSockets[sock.user.id] = sock;
+          console.log(`🧠 Session for ${sock.user.id} is now active.`);
         } else if (
           connection === 'close' &&
           lastDisconnect &&
           lastDisconnect.error?.output?.statusCode !== 401
         ) {
-          console.log('⚠️ Connection closed. Reconnecting...');
+          console.log('⚠️ Connection closed unexpectedly. Reconnecting...');
           await delay(3000);
           createPairingCode();
         }
