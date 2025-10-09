@@ -6,6 +6,7 @@ const PORT = process.env.PORT || 8000;
 
 const server = require('./qr');
 const code = require('./pair');
+const { restoreAllSessions } = require('./session'); // ✅ Added to load saved sessions
 const path = process.cwd();
 
 require('events').EventEmitter.defaultMaxListeners = 500;
@@ -23,6 +24,11 @@ app.use('/', async (req, res) => {
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// ✅ Restore all saved sessions when the server starts
+restoreAllSessions()
+  .then(() => console.log('♻️ All saved sessions restored successfully!'))
+  .catch(err => console.error('❌ Failed to restore sessions:', err));
 
 // ✅ Keep Render awake — heartbeat every 25s
 const url = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
