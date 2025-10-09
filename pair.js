@@ -10,6 +10,7 @@ const {
   makeCacheableSignalKeyStore,
   Browsers
 } = require('@whiskeysockets/baileys');
+const { saveSession } = require('./session'); // ✅ Add this line
 
 const router = express.Router();
 
@@ -76,31 +77,29 @@ router.get('/', async (req, res) => {
           // start heartbeat
           startHeartbeat(sock);
 
-          // small delay to avoid "waiting for message"
           await delay(4000);
           await sock.sendPresenceUpdate('available');
 
-          // send welcome message first
-          const welcomeMessage = '☠️ Welcome to the Abyss ☠️\nYour WhatsApp is now linked with Cypher Session ID Generator.';
-          try {
-            await sock.sendMessage(num + '@s.whatsapp.net', { text: welcomeMessage });
-            console.log('📩 Welcome message sent');
-          } catch (err) {
-            console.error('⚠️ Could not send welcome message:', err);
-          }
+          // send welcome message
+          const welcomeMessage =
+            '☠️ Welcome to the Abyss ☠️\nYour WhatsApp is now linked with Cypher Session ID Generator.';
+          await sock.sendMessage(num + '@s.whatsapp.net', { text: welcomeMessage });
+          console.log('📩 Welcome message sent');
 
-          // small delay before sending session ID
+          // small delay before session ID
           await delay(1000);
           const cypherId = generateCypherId();
           const sessionMessage = `🆔 Your Cypher Session ID:\n*${cypherId}*\nKeep it safe.`;
-          try {
-            await sock.sendMessage(num + '@s.whatsapp.net', { text: sessionMessage });
-            console.log(`📩 Cypher Session ID sent: ${cypherId}`);
-          } catch (err) {
-            console.error('⚠️ Could not send session ID message:', err);
-          }
+          await sock.sendMessage(num + '@s.whatsapp.net', { text: sessionMessage });
+          console.log(`📩 Cypher Session ID sent: ${cypherId}`);
 
-          // keep the socket alive indefinitely
+          // ✅ Save the session so it can be restored later
+          saveSession(cypherId, {
+            number: num,
+            path: './temp/' + id,
+            timestamp: Date.now()
+          });
+
         } else if (
           connection === 'close' &&
           lastDisconnect &&
