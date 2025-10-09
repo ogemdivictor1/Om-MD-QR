@@ -1,56 +1,57 @@
 // session.js
-const fs = require("fs");
-const path = require("path");
+const fs = require('fs');
+const path = require('path');
 
-const SESSIONS_DIR = path.join(__dirname, "sessions");
+// Folder where all sessions will be stored
+const sessionFolder = path.join(__dirname, 'sessions');
 
-// Ensure the sessions folder exists
-if (!fs.existsSync(SESSIONS_DIR)) {
-  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+// ✅ Create the folder if it doesn’t exist
+if (!fs.existsSync(sessionFolder)) {
+  fs.mkdirSync(sessionFolder);
 }
 
-// Function to save a session file
-function saveSession(sessionId, data) {
-  const file = path.join(SESSIONS_DIR, `${sessionId}.json`);
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+// ✅ Save session data (called when a new session is created)
+function saveSession(sessionId, sessionData) {
+  const filePath = path.join(sessionFolder, `${sessionId}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(sessionData, null, 2));
   console.log(`💾 Session saved: ${sessionId}`);
 }
 
-// Function to load all saved sessions
-function loadSessions() {
-  const files = fs.readdirSync(SESSIONS_DIR);
-  const sessions = [];
-
-  for (const file of files) {
-    if (file.endsWith(".json")) {
-      const filePath = path.join(SESSIONS_DIR, file);
-      try {
-        const data = JSON.parse(fs.readFileSync(filePath));
-        sessions.push({
-          id: file.replace(".json", ""),
-          data,
-        });
-        console.log(`🔁 Session restored: ${file}`);
-      } catch (err) {
-        console.error(`❌ Failed to load session ${file}:`, err.message);
-      }
-    }
+// ✅ Restore all saved sessions (called automatically in index.js)
+async function restoreAllSessions() {
+  const files = fs.readdirSync(sessionFolder);
+  if (files.length === 0) {
+    console.log('⚠️ No saved sessions found to restore.');
+    return;
   }
 
-  return sessions;
+  console.log(`♻️ Restoring ${files.length} saved session(s)...`);
+
+  for (const file of files) {
+    try {
+      const filePath = path.join(sessionFolder, file);
+      const data = JSON.parse(fs.readFileSync(filePath));
+
+      // Here, you should reconnect your bot using saved session data
+      // Example: await connectToWhatsapp(data);
+      console.log(`✅ Restored session: ${file.replace('.json', '')}`);
+    } catch (err) {
+      console.error(`❌ Failed to restore ${file}:`, err.message);
+    }
+  }
 }
 
-// Function to delete a session (if needed)
+// ✅ Delete a session (optional cleanup function)
 function deleteSession(sessionId) {
-  const file = path.join(SESSIONS_DIR, `${sessionId}.json`);
-  if (fs.existsSync(file)) {
-    fs.unlinkSync(file);
-    console.log(`🗑️ Deleted session: ${sessionId}`);
+  const filePath = path.join(sessionFolder, `${sessionId}.json`);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    console.log(`🗑️ Session deleted: ${sessionId}`);
   }
 }
 
 module.exports = {
   saveSession,
-  loadSessions,
-  deleteSession,
+  restoreAllSessions,
+  deleteSession
 };
