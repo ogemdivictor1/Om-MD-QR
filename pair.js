@@ -1,10 +1,10 @@
-// src/pairing.js
+// CYPHER-MD Session Generator
 const express = require('express');
 const fs = require('fs');
-const crypto = require('crypto');
 const pino = require('pino');
+const { makeid } = require('./id');
 const {
-  makeWASocket,
+  default: makeWASocket,
   useMultiFileAuthState,
   delay,
   makeCacheableSignalKeyStore,
@@ -13,44 +13,22 @@ const {
 
 const router = express.Router();
 
-// Helper: remove temp folder if needed
-function removeFile(FilePath) {
-  if (!fs.existsSync(FilePath)) return false;
-  fs.rmSync(FilePath, { recursive: true, force: true });
+// Helper: Remove temporary session folder
+function removeFile(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  fs.rmSync(filePath, { recursive: true, force: true });
 }
 
-// Helper: create a Cypher ID (branded session ID)
-function generateCypherId() {
-  return 'CYPHER' + crypto.randomBytes(5).toString('hex').toUpperCase();
-}
-
-// Heartbeat function: keeps session alive by sending presence every 30s
-async function startHeartbeat(sock) {
-  setInterval(async () => {
-    try {
-      await sock.sendPresenceUpdate('available');
-      console.log('💓 Heartbeat sent to WhatsApp');
-    } catch (e) {
-      console.error('⚠️ Heartbeat failed:', e);
-    }
-  }, 30000);
-}
-
+// ========== MAIN ROUTE ==========
 router.get('/', async (req, res) => {
-  const num = (req.query.number || '').replace(/[^0-9]/g, '');
-  if (!num) return res.send({ error: 'Number missing' });
+  const id = makeid();
+  let num = req.query.number;
 
-  // Create temp folder
-  if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
-
-  // Create a unique folder for this session
-  const sessionFolder = './temp/' + Date.now();
-
-  async function createSession() {
+  async function CYPHER_MD_PAIR_CODE() {
     try {
-      const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
+      const { state, saveCreds } = await useMultiFileAuthState(`./temp/${id}`);
 
-      const sock = makeWASocket({
+      const Cypher_Socket = makeWASocket({
         auth: {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
@@ -60,61 +38,79 @@ router.get('/', async (req, res) => {
         browser: Browsers.macOS('Safari')
       });
 
-      // send pairing code if needed
-      if (!sock.authState.creds.registered) {
-        const code = await sock.requestPairingCode(num);
-        if (!res.headersSent) res.send({ code });
+      // If number not registered yet, request pair code
+      if (!Cypher_Socket.authState.creds.registered) {
+        await delay(1500);
+        num = num.replace(/[^0-9]/g, '');
+        const code = await Cypher_Socket.requestPairingCode(num);
+
+        if (!res.headersSent) {
+          await res.send({ code });
+        }
       }
 
-      sock.ev.on('creds.update', saveCreds);
+      Cypher_Socket.ev.on('creds.update', saveCreds);
 
-      sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+      Cypher_Socket.ev.on('connection.update', async (s) => {
+        const { connection, lastDisconnect } = s;
 
-        if (connection === 'connecting') {
-          console.log('🔄 Connecting to WhatsApp...');
-        } else if (connection === 'open') {
-          console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
+        if (connection === 'open') {
+          console.log('✅ Connected to WhatsApp');
 
-          // start heartbeat
-          startHeartbeat(sock);
+          // Wait for WhatsApp to sync
+          await delay(4000);
 
-          // send welcome message
-          const welcomeMessage = '☠️ Welcome to the Abyss ☠️\nYour WhatsApp is now linked with Cypher Session ID Generator.';
-          try {
-            await sock.sendMessage(num + '@s.whatsapp.net', { text: welcomeMessage });
-            await delay(500);
-            console.log('📩 Welcome message sent');
-          } catch (err) {
-            console.error('⚠️ Could not send welcome message:', err);
-          }
+          // Read creds.json and convert to base64
+          const data = fs.readFileSync(`${__dirname}/temp/${id}/creds.json`);
+          const b64data = Buffer.from(data).toString('base64');
 
-          // small delay before sending session ID
-          await delay(1000);
-          const cypherId = generateCypherId();
-          const sessionMessage = `🆔 Your Cypher Session ID:\n*${cypherId}*\nKeep it safe.`;
-          try {
-            await sock.sendMessage(num + '@s.whatsapp.net', { text: sessionMessage });
-            console.log(`📩 Cypher Session ID sent: ${cypherId}`);
-          } catch (err) {
-            console.error('⚠️ Could not send session ID message:', err);
-          }
+          // Send session to user
+          await Cypher_Socket.sendMessage(Cypher_Socket.user.id, {
+            text: 'CYPHER-MD;;;' + b64data
+          });
 
-          console.log('💀 Session will now stay alive indefinitely until manually closed.');
-        } else if (connection === 'close' && lastDisconnect) {
-          console.log('⚠️ Connection closed. Reconnecting...');
-          await delay(3000);
-          createSession();
+          // Send success message
+          const CYPHER_TEXT = `
+╔══◇
+║ *『 Welcome to CYPHER-MD 』*
+║ You have completed the first step to making your bot.
+╚════════════════════════╝
+╔═══◇
+║  『••• 𝗡𝗼𝘁𝗲 •••』
+║ Do not share your *SESSION_ID* with anyone.
+║ Anyone who gets it can control your bot!
+╚════════════════════════╝
+          `;
+
+          await Cypher_Socket.sendMessage(Cypher_Socket.user.id, {
+            text: CYPHER_TEXT
+          });
+
+          // Close and remove temp data
+          await delay(100);
+          await Cypher_Socket.ws.close();
+          return await removeFile(`./temp/${id}`);
+        } else if (
+          connection === 'close' &&
+          lastDisconnect &&
+          lastDisconnect.error &&
+          lastDisconnect.error.output?.statusCode !== 401
+        ) {
+          console.log('⚠️ Connection closed. Retrying...');
+          await delay(10000);
+          CYPHER_MD_PAIR_CODE();
         }
       });
     } catch (err) {
-      console.error('❌ Error creating WhatsApp session:', err);
-      removeFile(sessionFolder);
-      if (!res.headersSent) res.send({ error: 'Service Unavailable' });
+      console.log('❌ Service restarted due to error:', err);
+      await removeFile(`./temp/${id}`);
+      if (!res.headersSent) {
+        await res.send({ code: 'Service Unavailable' });
+      }
     }
   }
 
-  return await createSession();
+  return await CYPHER_MD_PAIR_CODE();
 });
 
 module.exports = router;
