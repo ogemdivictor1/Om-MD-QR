@@ -1,100 +1,98 @@
+const PastebinAPI = require('pastebin-js'),
+pastebin = new PastebinAPI('EMWTMkQAVfJa9kM-MRUrxd5Oku1U7pgL')
+const {makeid} = require('./id');
 const express = require('express');
 const fs = require('fs');
-const https = require('https');
-const pino = require('pino');
-const { makeid } = require('./id');
+let router = express.Router()
+const pino = require("pino");
 const {
-  makeWASocket,
-  useMultiFileAuthState,
-  delay,
-  makeCacheableSignalKeyStore,
-  Browsers
-} = require('@whiskeysockets/baileys');
+    default: Mohammad_Imran,
+    useMultiFileAuthState,
+    delay,
+    makeCacheableSignalKeyStore,
+    Browsers
+} = require("@whiskeysockets/baileys");
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+function removeFile(FilePath){
+    if(!fs.existsSync(FilePath)) return false;
+    fs.rmSync(FilePath, { recursive: true, force: true })
+ };
 
-// --- Heartbeat: Ping self every 10 minutes ---
-setInterval(() => {
-  https.get(`https://localhost:${PORT}`, (res) => {
-    console.log('💓 Heartbeat ping sent');
-  }).on('error', (err) => {
-    // Ignore connection errors silently
-  });
-}, 10 * 60 * 1000);
+router.get('/', async (req, res) => {
+    const id = makeid();
+    let num = req.query.number;
 
-// --- Safe folder remover ---
-function removeFile(FilePath) {
-  if (fs.existsSync(FilePath)) fs.rmSync(FilePath, { recursive: true, force: true });
-}
+    async function CYPHER_PAIR_CODE() {
+        const { state, saveCreds } = await useMultiFileAuthState('./temp/'+id)
+        try {
+            let Pair_Code_By_Cypher = Mohammad_Imran({
+                auth: {
+                    creds: state.creds,
+                    keys: makeCacheableSignalKeyStore(state.keys, pino({level: "fatal"}).child({level: "fatal"})),
+                },
+                printQRInTerminal: false,
+                logger: pino({level: "fatal"}).child({level: "fatal"}),
+                browser: ["Chrome (Linux)", "", ""]
+             });
 
-// --- Main route ---
-app.get('/', async (req, res) => {
-  const id = makeid();
-  const num = (req.query.number || '').replace(/[^0-9]/g, '');
-  if (!num) return res.send({ error: 'Number missing' });
+            if(!Pair_Code_By_Cypher.authState.creds.registered) {
+                await delay(1500);
+                num = num.replace(/[^0-9]/g,'');
+                const code = await Pair_Code_By_Cypher.requestPairingCode(num);
+                if(!res.headersSent){
+                    await res.send({code});
+                }
+            }
 
-  if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
+            Pair_Code_By_Cypher.ev.on('creds.update', saveCreds);
+            Pair_Code_By_Cypher.ev.on("connection.update", async (s) => {
+                const { connection, lastDisconnect } = s;
 
-  const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
+                if (connection == "open") {
+                    await delay(5000);
+                    let data = fs.readFileSync(__dirname + `/temp/${id}/creds.json`);
+                    await delay(800);
+                    let b64data = Buffer.from(data).toString('base64');
+                    let session = await Pair_Code_By_Cypher.sendMessage(Pair_Code_By_Cypher.user.id, { text: 'CYPHER-MD;;;' + b64data });
 
-  try {
-    const sock = makeWASocket({
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-      },
-      printQRInTerminal: false,
-      logger: pino({ level: 'silent' }),
-      browser: Browsers.macOS('Safari')
-    });
+                    let CYPHER_TEXT = `
+╔════◇
+║ *『 𝗖𝗬𝗣𝗛𝗘𝗥-𝗠𝗗 』*
+║ _Pairing successful. Bot ready to connect._
+╚════════════════════════╝
+╔═════◇
+║ 『••• 𝗦𝗨𝗣𝗣𝗢𝗥𝗧 𝗟𝗜𝗡𝗞 •••』
+║ *Developer:* _https://wa.me/2348126159499_
+║ *Note:* _Never share your SESSION_ID with anyone._
+║ _It gives full access to your WhatsApp._
+╚════════════════════════╝
+`;
 
-    await delay(1000);
+                    await Pair_Code_By_Cypher.sendMessage(
+                        Pair_Code_By_Cypher.user.id,
+                        { text: CYPHER_TEXT },
+                        { quoted: session }
+                    );
 
-    if (!sock.authState.creds.registered) {
-      const code = await sock.requestPairingCode(num);
-      if (!res.headersSent) return res.send({ code });
+                    await delay(100);
+                    await Pair_Code_By_Cypher.ws.close();
+                    return await removeFile('./temp/'+id);
+                } 
+                else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
+                    await delay(10000);
+                    CYPHER_PAIR_CODE();
+                }
+            });
+        } catch (err) {
+            console.log("Service restarted due to error");
+            await removeFile('./temp/'+id);
+            if(!res.headersSent){
+                await res.send({code:"Service Unavailable"});
+            }
+        }
     }
 
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect } = update;
-
-      if (connection === 'open') {
-        console.log('✅ Connected to WhatsApp:', sock.user.id);
-
-        // Send welcome message
-        await sock.sendMessage(num + '@s.whatsapp.net', {
-          text: 'Welcome to Cypher Session ID Generator 🔥'
-        });
-
-        await delay(2000);
-
-        // Send session ID (text only)
-        const sessionData = fs.readFileSync(`./temp/${id}/creds.json`, 'utf8');
-        await sock.sendMessage(num + '@s.whatsapp.net', {
-          text: sessionData
-        });
-
-        console.log('📤 Session ID sent successfully');
-      } else if (
-        connection === 'close' &&
-        lastDisconnect &&
-        lastDisconnect.error?.output?.statusCode !== 401
-      ) {
-        console.log('Reconnecting...');
-        await delay(5000);
-        app.get('/', async (req, res) => createPairingCode());
-      }
-    });
-  } catch (err) {
-    console.error('❌ Error connecting:', err);
-    removeFile('./temp/' + id);
-    if (!res.headersSent) res.send({ code: 'Service Unavailable' });
-  }
+    return await CYPHER_PAIR_CODE();
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Cypher Pair Server running on port ${PORT}`);
-});
+module.exports = router;
