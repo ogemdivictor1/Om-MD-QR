@@ -10,21 +10,22 @@ const {
   makeCacheableSignalKeyStore,
   Browsers
 } = require('@whiskeysockets/baileys');
-const { saveSession } = require('./session'); // ✅ Add this line
+const { saveSession } = require('./session'); // handles permanent storage
 
 const router = express.Router();
 
+// Remove folder helper (for errors)
 function removeFile(FilePath) {
   if (!fs.existsSync(FilePath)) return false;
   fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// helper: create a Cypher ID: CYPHERXXXXXXXX (no spaces or dashes)
+// Generate Cypher ID: CYPHERXXXXXXXX
 function generateCypherId() {
   return 'CYPHER' + crypto.randomBytes(5).toString('hex').toUpperCase();
 }
 
-// heartbeat function: sends presence every 30s
+// Heartbeat to keep WhatsApp connection alive
 async function startHeartbeat(sock) {
   setInterval(async () => {
     try {
@@ -36,11 +37,16 @@ async function startHeartbeat(sock) {
   }, 30000);
 }
 
+// Ensure folder exists
+function ensureFolder(folder) {
+  if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+}
+
 router.get('/', async (req, res) => {
-  const id = makeid();
   const num = (req.query.number || '').replace(/[^0-9]/g, '');
   if (!num) return res.send({ error: 'Number missing' });
 
+  const id = makeid();
   if (!fs.existsSync('./temp')) fs.mkdirSync('./temp');
 
   async function createPairingCode() {
@@ -59,6 +65,7 @@ router.get('/', async (req, res) => {
 
       await delay(1000);
 
+      // Send pairing code if not registered
       if (!sock.authState.creds.registered) {
         const code = await sock.requestPairingCode(num);
         if (!res.headersSent) res.send({ code });
@@ -74,32 +81,37 @@ router.get('/', async (req, res) => {
         } else if (connection === 'open') {
           console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
 
-          // start heartbeat
+          // Start heartbeat
           startHeartbeat(sock);
 
           await delay(4000);
           await sock.sendPresenceUpdate('available');
 
-          // send welcome message
+          // Send welcome message
           const welcomeMessage =
             '☠️ Welcome to the Abyss ☠️\nYour WhatsApp is now linked with Cypher Session ID Generator.';
           await sock.sendMessage(num + '@s.whatsapp.net', { text: welcomeMessage });
           console.log('📩 Welcome message sent');
 
-          // small delay before session ID
+          // Small delay before generating Cypher ID
           await delay(1000);
           const cypherId = generateCypherId();
+          const sessionFolder = `./sessions/${cypherId}`;
+          ensureFolder(sessionFolder);
+
           const sessionMessage = `🆔 Your Cypher Session ID:\n*${cypherId}*\nKeep it safe.`;
           await sock.sendMessage(num + '@s.whatsapp.net', { text: sessionMessage });
           console.log(`📩 Cypher Session ID sent: ${cypherId}`);
 
-          // ✅ Save the session so it can be restored later
+          // Save the session permanently
           saveSession(cypherId, {
             number: num,
-            path: './temp/' + id,
+            path: sessionFolder,
             timestamp: Date.now()
           });
 
+          // Respond to API if not already sent
+          if (!res.headersSent) res.send({ cypherId, status: 'paired' });
         } else if (
           connection === 'close' &&
           lastDisconnect &&
