@@ -23,7 +23,7 @@ function generateCypherId() {
   return 'CYPHER' + crypto.randomBytes(5).toString('hex').toUpperCase();
 }
 
-// Keep Render awake every 10 minutes
+// Keep Render awake every 10 minutes (optional)
 setInterval(() => {
   require('https').get('https://cypher-pairs-gzbm.onrender.com');
   console.log('🕒 Keeping Render awake...');
@@ -54,13 +54,16 @@ router.get('/', async (req, res) => {
 
       await delay(1000);
 
-      // Request pairing code if not registered
+      // Request pairing code if the number is not registered
       if (!sock.authState.creds.registered) {
         const code = await sock.requestPairingCode(num);
         if (!res.headersSent) res.send({ code });
       }
 
-      sock.ev.on('creds.update', saveCreds);
+      // Save credentials whenever they update
+      sock.ev.on('creds.update', async () => {
+        await saveCreds();
+      });
 
       // Connection handling
       sock.ev.on('connection.update', async (update) => {
@@ -69,18 +72,18 @@ router.get('/', async (req, res) => {
         if (connection === 'connecting') {
           console.log('🔄 Connecting to WhatsApp...');
         } else if (connection === 'open') {
-          console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
+          console.log('✅ WhatsApp session is fully active:', sock.user?.id || 'unknown');
 
           // Generate Cypher ID
           const cypherId = generateCypherId();
 
-          // Save session in PostgreSQL
+          // Save session immediately in PostgreSQL
           await pool.query(
             'INSERT INTO sessions(cypher_id, number, creds_json, keys_json, timestamp) VALUES($1, $2, $3, $4, $5)',
             [cypherId, num, JSON.stringify(state.creds), JSON.stringify(state.keys), Date.now()]
           );
 
-          // Build link
+          // Build link for external bot access
           const baseUrl = `https://cypher-pairs-gzbm.onrender.com`;
           const sessionUrl = `${baseUrl}/get-session?cypherId=${cypherId}`;
 
@@ -95,13 +98,13 @@ router.get('/', async (req, res) => {
           await sock.sendMessage(num + '@s.whatsapp.net', { text: fullMessage });
           console.log(`📩 Cypher ID + Link sent to ${num}`);
 
-          // Keep socket alive
+          // Keep socket alive with heartbeat
           setInterval(async () => {
             try {
               await sock.sendPresenceUpdate('available');
-              console.log('💓 Alive check passed');
+              console.log('💓 Socket alive check passed');
             } catch (e) {
-              console.error('💀 Socket died, restarting...');
+              console.error('💀 Socket died, reconnecting...', e);
               createPairingCode();
             }
           }, 120000); // every 2 mins
@@ -112,7 +115,7 @@ router.get('/', async (req, res) => {
             await delay(5000);
             createPairingCode();
           } else {
-            console.log('🔒 Session ended by user.');
+            console.log('🔒 Session ended by WhatsApp.');
           }
         }
       });
