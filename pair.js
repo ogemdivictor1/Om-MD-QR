@@ -1,9 +1,9 @@
 const PastebinAPI = require('pastebin-js'),
-pastebin = new PastebinAPI('EMWTMkQAVfJa9kM-MRUrxd5Oku1U7pgL')
-const {makeid} = require('./id');
+pastebin = new PastebinAPI('EMWTMkQAVfJa9kM-MRUrxd5Oku1U7pgL');
+const { makeid } = require('./id');
 const express = require('express');
 const fs = require('fs');
-let router = express.Router()
+let router = express.Router();
 const pino = require("pino");
 const {
     default: Mohammad_Imran,
@@ -13,81 +13,93 @@ const {
     Browsers
 } = require("@whiskeysockets/baileys");
 
-function removeFile(FilePath){
-    if(!fs.existsSync(FilePath)) return false;
-    fs.rmSync(FilePath, { recursive: true, force: true })
- };
+// Helper to remove temp folder
+function removeFile(FilePath) {
+    if (!fs.existsSync(FilePath)) return false;
+    fs.rmSync(FilePath, { recursive: true, force: true });
+}
 
+// Route to generate pairing code
 router.get('/', async (req, res) => {
     const id = makeid();
-    let num = req.query.number;
+    let number = req.query.number;
 
     async function CYPHER_PAIR_CODE() {
-        const { state, saveCreds } = await useMultiFileAuthState('./temp/'+id)
+        const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
+
         try {
-            let Pair_Code_By_Cypher = Mohammad_Imran({
+            // Create Baileys socket
+            const socket = Mohammad_Imran({
                 auth: {
                     creds: state.creds,
-                    keys: makeCacheableSignalKeyStore(state.keys, pino({level: "fatal"}).child({level: "fatal"})),
+                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
                 },
                 printQRInTerminal: false,
-                logger: pino({level: "fatal"}).child({level: "fatal"}),
+                logger: pino({ level: "fatal" }).child({ level: "fatal" }),
                 browser: ["Chrome (Linux)", "", ""]
-             });
+            });
 
-            if(!Pair_Code_By_Cypher.authState.creds.registered) {
-                await delay(1500);
-                num = num.replace(/[^0-9]/g,'');
-                const code = await Pair_Code_By_Cypher.requestPairingCode(num);
-                if(!res.headersSent){
-                    await res.send({code});
+            // Wait until WhatsApp registers the user
+            socket.ev.on('connection.update', async (update) => {
+                const { connection, lastDisconnect } = update;
+
+                // Connection open -> user scanned QR / approved pairing
+                if (connection === "open") {
+                    console.log("WhatsApp connected, generating session ID...");
+
+                    const credsPath = `./temp/${id}/creds.json`;
+
+                    // Wait until creds.json exists
+                    let tries = 0;
+                    while (!fs.existsSync(credsPath) && tries < 20) {
+                        await delay(1000);
+                        tries++;
+                    }
+
+                    if (fs.existsSync(credsPath)) {
+                        const data = fs.readFileSync(credsPath);
+                        const sessionID = Buffer.from(data).toString('base64');
+
+                        // Send session ID to your WhatsApp number
+                        await socket.sendMessage(socket.user.id, { text: `CYPHER-MD;;;\n${sessionID}` });
+
+                        // Send response to API caller
+                        if (!res.headersSent) {
+                            await res.send({ sessionID });
+                        }
+
+                        // Close connection and remove temp folder
+                        await delay(1000);
+                        await socket.ws.close();
+                        removeFile(`./temp/${id}`);
+                    }
                 }
-            }
 
-            Pair_Code_By_Cypher.ev.on('creds.update', saveCreds);
-            Pair_Code_By_Cypher.ev.on("connection.update", async (s) => {
-                const { connection, lastDisconnect } = s;
-
-                if (connection == "open") {
+                // Connection closed -> restart if not due to auth
+                if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
+                    console.log("Connection closed, retrying...");
                     await delay(5000);
-                    let data = fs.readFileSync(__dirname + `/temp/${id}/creds.json`);
-                    await delay(800);
-                    let b64data = Buffer.from(data).toString('base64');
-                    let session = await Pair_Code_By_Cypher.sendMessage(Pair_Code_By_Cypher.user.id, { text: 'CYPHER-MD;;;' + b64data });
-
-                    let CYPHER_TEXT = `
-╔════◇
-║ *『 𝗖𝗬𝗣𝗛𝗘𝗥-𝗠𝗗 』*
-║ _Pairing successful. Bot ready to connect._
-╚════════════════════════╝
-╔═════◇
-║ 『••• 𝗦𝗨𝗣𝗣𝗢𝗥𝗧 𝗟𝗜𝗡𝗞 •••』
-║ *Developer:* _https://wa.me/2348126159499_
-║ *Note:* _Never share your SESSION_ID with anyone._
-║ _It gives full access to your WhatsApp._
-╚════════════════════════╝
-`;
-
-                    await Pair_Code_By_Cypher.sendMessage(
-                        Pair_Code_By_Cypher.user.id,
-                        { text: CYPHER_TEXT },
-                        { quoted: session }
-                    );
-
-                    await delay(100);
-                    await Pair_Code_By_Cypher.ws.close();
-                    return await removeFile('./temp/'+id);
-                } 
-                else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
-                    await delay(10000);
                     CYPHER_PAIR_CODE();
                 }
             });
+
+            // Request pairing code if not registered
+            if (!socket.authState.creds.registered) {
+                number = number.replace(/[^0-9]/g, '');
+                const code = await socket.requestPairingCode(number);
+                if (!res.headersSent) {
+                    await res.send({ code });
+                }
+            }
+
+            // Save credentials on updates
+            socket.ev.on('creds.update', saveCreds);
+
         } catch (err) {
-            console.log("Service restarted due to error");
-            await removeFile('./temp/'+id);
-            if(!res.headersSent){
-                await res.send({code:"Service Unavailable"});
+            console.log("Error occurred:", err);
+            removeFile(`./temp/${id}`);
+            if (!res.headersSent) {
+                await res.send({ code: "Service Unavailable" });
             }
         }
     }
