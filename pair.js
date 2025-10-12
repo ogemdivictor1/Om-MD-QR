@@ -1,40 +1,33 @@
+// pair.js
 const express = require('express');
-const fs = require('fs');
 const crypto = require('crypto');
 const pino = require('pino');
-const https = require('https');
 const { makeid } = require('./id');
-const {
-  makeWASocket,
-  useMultiFileAuthState,
-  delay,
-  makeCacheableSignalKeyStore,
-  Browsers
-} = require('@whiskeysockets/baileys');
-const { saveSession } = require('./session'); // handles permanent storage
+const { makeWASocket, useMultiFileAuthState, delay, makeCacheableSignalKeyStore, Browsers } = require('@whiskeysockets/baileys');
+const { Pool } = require('pg');
 
 const router = express.Router();
 
 // ===============================
+// 🔧 PostgreSQL Setup
+// ===============================
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+// ===============================
 // 🔧 Helpers
 // ===============================
-function removeFile(FilePath) {
-  if (fs.existsSync(FilePath)) fs.rmSync(FilePath, { recursive: true, force: true });
-}
-
 function generateCypherId() {
   return 'CYPHER' + crypto.randomBytes(5).toString('hex').toUpperCase();
 }
 
-function ensureFolder(folder) {
-  if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
-}
-
 // Keep Render awake every 10 minutes
 setInterval(() => {
-  https.get('https://cypher-pairs-gzbm.onrender.com');
+  require('https').get('https://cypher-pairs-gzbm.onrender.com');
   console.log('🕒 Keeping Render awake...');
-}, 600000); // 10 min
+}, 600000);
 
 // ===============================
 // 🔌 WhatsApp Session Generator
@@ -44,7 +37,6 @@ router.get('/', async (req, res) => {
   if (!num) return res.send({ error: 'Number missing' });
 
   const id = makeid();
-  ensureFolder('./temp');
 
   async function createPairingCode() {
     const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
@@ -62,7 +54,7 @@ router.get('/', async (req, res) => {
 
       await delay(1000);
 
-      // Request pairing code
+      // Request pairing code if not registered
       if (!sock.authState.creds.registered) {
         const code = await sock.requestPairingCode(num);
         if (!res.headersSent) res.send({ code });
@@ -70,9 +62,7 @@ router.get('/', async (req, res) => {
 
       sock.ev.on('creds.update', saveCreds);
 
-      // =====================================
-      // 🧠 Connection handling
-      // =====================================
+      // Connection handling
       sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
@@ -81,16 +71,20 @@ router.get('/', async (req, res) => {
         } else if (connection === 'open') {
           console.log('✅ Connected to WhatsApp:', sock.user?.id || 'unknown');
 
-          // Generate Cypher ID + folder
+          // Generate Cypher ID
           const cypherId = generateCypherId();
-          const sessionFolder = `./sessions/${cypherId}`;
-          ensureFolder(sessionFolder);
+
+          // Save session in PostgreSQL
+          await pool.query(
+            'INSERT INTO sessions(cypher_id, number, creds_json, keys_json, timestamp) VALUES($1, $2, $3, $4, $5)',
+            [cypherId, num, JSON.stringify(state.creds), JSON.stringify(state.keys), Date.now()]
+          );
 
           // Build link
           const baseUrl = `https://cypher-pairs-gzbm.onrender.com`;
           const sessionUrl = `${baseUrl}/get-session?cypherId=${cypherId}`;
 
-          // Send WhatsApp message
+          // Send WhatsApp message with Cypher ID + link
           const fullMessage =
             `☠️ *Welcome to the Abyss* ☠️\nYour WhatsApp is now linked with Cypher Session ID Generator.\n\n` +
             `🆔 *Your Cypher ID:* ${cypherId}\n` +
@@ -101,14 +95,7 @@ router.get('/', async (req, res) => {
           await sock.sendMessage(num + '@s.whatsapp.net', { text: fullMessage });
           console.log(`📩 Cypher ID + Link sent to ${num}`);
 
-          // Save session permanently
-          saveSession(cypherId, {
-            number: num,
-            path: sessionFolder,
-            timestamp: Date.now()
-          });
-
-          // Keep it alive
+          // Keep socket alive
           setInterval(async () => {
             try {
               await sock.sendPresenceUpdate('available');
@@ -118,7 +105,6 @@ router.get('/', async (req, res) => {
               createPairingCode();
             }
           }, 120000); // every 2 mins
-
         } else if (connection === 'close') {
           console.log('⚠️ Disconnected. Trying to reconnect...');
           const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
@@ -132,12 +118,35 @@ router.get('/', async (req, res) => {
       });
     } catch (err) {
       console.error('❌ Error in pairing flow:', err);
-      removeFile('./temp/' + id);
       if (!res.headersSent) res.send({ code: 'Service Unavailable' });
     }
   }
 
   return await createPairingCode();
+});
+
+// ===============================
+// 🔌 Endpoint to fetch session for other bots
+// ===============================
+router.get('/get-session', async (req, res) => {
+  const cypherId = req.query.cypherId;
+  if (!cypherId) return res.send({ error: 'Missing Cypher ID' });
+
+  try {
+    const result = await pool.query('SELECT * FROM sessions WHERE cypher_id=$1', [cypherId]);
+    if (result.rows.length === 0) return res.send({ error: 'Session not found' });
+
+    const session = result.rows[0];
+    res.send({
+      cypherId: session.cypher_id,
+      number: session.number,
+      creds: JSON.parse(session.creds_json),
+      keys: JSON.parse(session.keys_json)
+    });
+  } catch (err) {
+    console.error('❌ Error fetching session:', err);
+    res.send({ error: 'Database error' });
+  }
 });
 
 module.exports = router;
