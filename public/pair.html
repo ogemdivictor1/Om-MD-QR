@@ -1,1 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pair with Cypher Session ID Generator</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background: radial-gradient(circle at top, #1a0000, #000);
+      font-family: 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      animation: fadeIn 1s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .box {
+      width: 320px;
+      height: auto;
+      padding: 25px;
+      background: rgba(10, 0, 0, 0.85);
+      border-radius: 12px;
+      box-shadow: 0 0 25px rgba(255, 0, 0, 0.4), inset 0 0 10px rgba(255, 0, 0, 0.3);
+      text-align: center;
+      transition: all 0.4s ease;
+    }
+
+    .box:hover {
+      box-shadow: 0 0 40px rgba(255, 20, 20, 0.7), inset 0 0 20px rgba(255, 0, 0, 0.3);
+      transform: scale(1.03);
+    }
+
+    h3 {
+      color: #ff4d4d;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 20px;
+    }
+
+    .input-container {
+      display: flex;
+      background: #0a0a0a;
+      border-radius: 1rem;
+      padding: 0.3rem;
+      gap: 0.3rem;
+      max-width: 300px;
+      width: 100%;
+    }
+
+    .input-container input {
+      border-radius: 0.8rem 0 0 0.8rem;
+      background: #1a1a1a;
+      border: none;
+      padding: 1rem;
+      flex: 1;
+      color: #ff4d4d;
+      font-weight: bold;
+      font-size: 1rem;
+      outline: none;
+    }
+
+    .input-container button {
+      padding: 1rem;
+      background: linear-gradient(135deg, #8b0000, #ff1a1a);
+      color: white;
+      font-weight: 700;
+      text-transform: uppercase;
+      border: none;
+      border-radius: 0 1rem 1rem 0;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .input-container button:hover {
+      background: linear-gradient(135deg, #ff0000, #660000);
+      box-shadow: 0 0 10px #ff0000;
+    }
+
+    #text {
+      color: #ffb3b3;
+    }
+
+    .centered-text {
+      text-align: center;
+      color: #ddd;
+    }
+
+    #copy {
+      cursor: pointer;
+    }
+
+    footer {
+      margin-top: 20px;
+      color: #ff1a1a;
+      font-size: 0.9rem;
+      text-align: center;
+      font-style: italic;
+      letter-spacing: 1px;
+      opacity: 0.8;
+    }
+
+    @media (max-width: 500px) {
+      .box {
+        width: 90%;
+      }
+      .input-container {
+        flex-direction: column;
+      }
+      .input-container input,
+      .input-container button {
+        border-radius: 0.8rem;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="box" id="box">
+      <div id="text">
+        <i class="fa fa-fire" style="color:#ff0000;font-size:24px;"></i>
+        <h3>Pair with Cypher Session ID Generator</h3>
+        <div class="input-container">
+          <input placeholder="+2348126159499" type="number" id="number" placeholder="Enter your phone number with a country code" name="">
+          <button id="submit">Submit</button>
+        </div>
+
+        <a id="waiting-message" class="centered-text" style="display: none;">Please wait a while...</a>
+        <br><br>
+        <main id="pair"></main>
+      </div>
+    </div>
+    <footer>🔥 Bound by Code. Fueled by Chaos. Cypher Reigns. 🔥</footer>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.0.0-alpha.1/axios.min.js"></script>
+  <script>
+    let a = document.getElementById("pair");
+    let b = document.getElementById("submit");
+    let c = document.getElementById("number");
+
+    async function Copy() {
+      let text = document.getElementById("copy").innerText;
+      let obj = document.getElementById("copy");
+      await navigator.clipboard.writeText(obj.innerText.replace('CODE: ', ''));
+      obj.innerText = "COPIED";
+      obj.style = "color:#ff4d4d;font-weight:bold";
+      setTimeout(() => {
+        obj.innerText = text;
+        obj.style = "color:white;font-weight-bold";
+      }, 500);
+    }
+
+    b.addEventListener("click", async (e) => {
+      e.preventDefault();
+      if (!c.value) {
+        a.innerHTML = '<a style="color:#ff4d4d;font-weight:bold">Enter your WhatsApp number with a country code</a><br><br>';
+      } else if (c.value.replace(/[^0-9]/g, "").length < 11) {
+        a.innerHTML = '<a style="color:red;font-weight:bold">Invalid number</a><br><br>';
+      } else {
+        const Maher_Zubair = c.value.replace(/[^0-9]/g, "");
+        a.innerHTML = '<a style="color:white;font-weight:bold">Generating your Cypher Session ID...</a><br><br>';
+        let { data } = await axios(`/code?number=${Maher_Zubair}`);
+        let code = data.code || "Service Unavailable";
+        a.innerHTML = '<font id="copy" onclick="Copy()" style="color:#ff4d4d;font-weight:bold" size="5">CODE: <span style="color:white;font-weight:bold">' + code + '</span></font><br><br><br>';
+      }
+    });
+  </script>
+</body>
+</html>
 
