@@ -30,12 +30,8 @@
     }
 
     @keyframes flicker {
-      0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% {
-        opacity: 1;
-      }
-      20%, 24%, 55% {
-        opacity: 0.3;
-      }
+      0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; }
+      20%, 24%, 55% { opacity: 0.3; }
     }
 
     .btn {
@@ -84,7 +80,6 @@
       text-shadow: 0 0 8px #ff0000;
     }
 
-    /* Floating red aura animation */
     .aura {
       position: absolute;
       width: 400px;
@@ -96,17 +91,8 @@
       filter: blur(40px);
     }
 
-    .aura:nth-child(1) {
-      top: 20%;
-      left: 15%;
-      animation-delay: 0s;
-    }
-
-    .aura:nth-child(2) {
-      bottom: 20%;
-      right: 15%;
-      animation-delay: 3s;
-    }
+    .aura:nth-child(1) { top: 20%; left: 15%; animation-delay: 0s; }
+    .aura:nth-child(2) { bottom: 20%; right: 15%; animation-delay: 3s; }
 
     @keyframes pulse {
       0%, 100% { transform: scale(1); opacity: 0.4; }
@@ -119,7 +105,9 @@
   <div class="aura"></div>
 
   <h1>CYPHER SESSION ID CONNECTOR</h1>
-  <button onclick="window.open('/qr')" class="btn">QR CODE</button>
-  <button onclick="window.open('/pair')" class="btn">PAIR CODE</button>
+  <button onclick="window.location.href='/qr'" class="btn">QR CODE</button>
+  <button onclick="window.location.href='/pair'" class="btn">PAIR CODE</button>
 
   <footer>⚡ Cypher once said — “The code burns, only devils link.”</footer>
+</body>
+</html>
