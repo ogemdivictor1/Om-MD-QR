@@ -11,16 +11,18 @@ import pkg from "pg";
 import fs from "fs";
 import path from "path";
 
+const router = express.Router();
+
 // ==========================
 // 🔹 POSTGRES DATABASE SETUP
 // ==========================
 const { Pool } = pkg;
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // From Render
+  connectionString: process.env.DATABASE_URL, // your Render Postgres URL
   ssl: { rejectUnauthorized: false },
 });
 
-// ✅ Auto-create table if not exists
+// ✅ Auto-create sessions table
 (async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -30,95 +32,105 @@ const pool = new Pool({
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
-  console.log("✅ Table 'sessions' is ready.");
+  console.log("✅ Table 'sessions' ready in PostgreSQL.");
 })();
 
 // ==========================
-// 🔹 EXPRESS SERVER SETUP
-// ==========================
-const app = express();
-app.use(express.json());
-const PORT = process.env.PORT || 3000;
-
-// ==========================
-// 🔹 STORAGE FOLDER BACKUP
+// 🔹 LOCAL BACKUP FOLDER
 // ==========================
 const sessionFolder = path.join("./sessions");
 if (!fs.existsSync(sessionFolder)) fs.mkdirSync(sessionFolder, { recursive: true });
 
 // ==========================
-// 🔹 QUICK SESSION GENERATOR
+// 🔹 ROUTES
 // ==========================
-app.get("/", (req, res) => {
+router.get("/", (req, res) => {
   res.send("🔥 Cypher WhatsApp Pair Server is Running...");
 });
 
-// Main route for session generation
-app.get("/generate-session", async (req, res) => {
+router.get("/generate-session", async (req, res) => {
   try {
     console.log("⚡ Generating Session ID...");
-
     const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
     const { version } = await fetchLatestBaileysVersion();
+
     const sock = makeWASocket({
       version,
       printQRInTerminal: true,
       auth: state,
       logger: P({ level: "silent" }),
       browser: ["CypherPair", "Chrome", "1.0.0"],
+      connectTimeoutMs: 20000, // ⏩ makes QR faster to appear
     });
 
-    sock.ev.on("connection.update", (update) => {
+    let qrSent = false;
+
+    sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
-      if (qr) {
-        res.send({
+
+      // ✅ Send QR only once
+      if (qr && !qrSent) {
+        qrSent = true;
+        console.log("📱 QR ready, waiting for scan...");
+        return res.json({
           status: true,
           message: "Scan this QR code in WhatsApp to connect.",
           qr: qr,
         });
       }
 
+      // ✅ Connection Opened
       if (connection === "open") {
         const sessionId = `CYPHER-${Date.now().toString(36)}`;
-        console.log("✅ WhatsApp Connected!");
+        console.log("✅ WhatsApp Connected:", sessionId);
 
-        // Save to database
-        pool.query(
+        // Save to PostgreSQL
+        await pool.query(
           "INSERT INTO sessions (session_id, data) VALUES ($1, $2)",
           [sessionId, JSON.stringify(state.creds)]
         );
 
-        // Save to file as backup
+        // Save backup locally
         fs.writeFileSync(
           path.join(sessionFolder, `${sessionId}.json`),
           JSON.stringify(state.creds, null, 2)
         );
 
-        res.json({
-          status: true,
-          message: "✅ Session ID Generated Successfully!",
-          sessionId,
-        });
+        console.log(`💾 Session saved successfully: ${sessionId}`);
 
-        sock.end();
-      } else if (connection === "close") {
-        const shouldReconnect =
-          lastDisconnect?.error?.output?.statusCode !==
-          DisconnectReason.loggedOut;
-        if (shouldReconnect) sock();
+        // Keep the session alive (don’t close sock)
+        sock.ev.on("creds.update", saveCreds);
+
+        // ✅ Respond once connection is confirmed
+        if (!res.headersSent) {
+          res.json({
+            status: true,
+            message: "✅ Session ID Generated Successfully!",
+            sessionId,
+          });
+        }
+      }
+
+      // 🧩 Reconnect only if logged out unexpectedly
+      if (connection === "close") {
+        const reason = lastDisconnect?.error?.output?.statusCode;
+        const shouldReconnect = reason !== DisconnectReason.loggedOut;
+        console.log("⚠️ Connection closed:", reason);
+        if (shouldReconnect) {
+          console.log("🔁 Reconnecting...");
+        }
       }
     });
 
-    sock.ev.on("creds.update", saveCreds);
   } catch (err) {
     console.error("❌ Error:", err);
-    res.status(500).send("Error generating session ID");
+    if (!res.headersSent) {
+      res.status(500).send("Error generating session ID");
+    }
   }
 });
 
 // ==========================
-// 🔹 START SERVER
+// 🔹 EXPORT ROUTER
 // ==========================
-app.listen(PORT, () => {
-  console.log(`🚀 Server started on port ${PORT}`);
-});
+export default router;
