@@ -11,8 +11,8 @@ const PORT = process.env.PORT || 8000;
 // ===============================
 // 🔧 Modules Import
 // ===============================
-const qrRouter = require('./qr');   // should export router
-const pairRouter = require('./pair'); // should export router
+const qrRouter = require('./qr');   // exports router
+const pairRouter = require('./pair'); // exports router
 const { restoreAllSessions } = require('./session'); // restore sessions
 
 // Prevent memory leaks from too many listeners
@@ -24,18 +24,22 @@ require('events').EventEmitter.defaultMaxListeners = 500;
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Use Routers (each file exports express.Router())
-app.use('/qr', qrRouter);
-app.use('/code', pairRouter); // fixed name for clarity
-app.use('/pair', pairRouter); // optional: same as /code
+// Serve static files (CSS, JS, images, HTML)
+app.use(express.static(path.join(__dirname, 'public'))); // put pair.html in /public
 
-// Serve static pages
+// Use Routers
+app.use('/qr', qrRouter);
+app.use('/api/pair', pairRouter); // all pair.js API routes prefixed with /api/pair
+
+// ===============================
+// 🚪 Routes for HTML pages
+// ===============================
 app.get('/pair', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'pair.html'));
+  res.sendFile(path.join(__dirname, 'public', 'pair.html'));
 });
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(process.cwd(), 'main.html'));
+  res.sendFile(path.join(__dirname, 'public', 'main.html'));
 });
 
 // ===============================
@@ -47,7 +51,6 @@ restoreAllSessions()
 
 // ===============================
 // 🩺 Keep Render Alive (Every 25s)
-// ===============================
 const url = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 setInterval(() => {
   axios
